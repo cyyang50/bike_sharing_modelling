@@ -50,9 +50,9 @@ The Data variables, type and description are shown in the following table. The v
 |*Variables*                   |  *Type*   |   *Description*                                            |
 |:-----------                  |:----------|:-----------------------------------------------------------|
 |**Date**                      |MM/DD/YY   |The date of the record (2017 Dec. -2018 Nov)                |
-| **Rented Bike count**        |Discrete  |   The number of bikes rented for the hour of the data      |
+| **Rented Bike count**        |Discrete  |   The number of bikes rented for the hour of the data       |
 | **Hour**                     |Categorical|   Each hour of the record for one day                      |
-| **Temperature(°C)**       |Continuous |   The environment temperature in °C recorded               |
+| **Temperature(°C)**          |Continuous |   The environment temperature in °C recorded               |
 | **Humidity(%)**              |Continuous |   The relative environment humidity in %                   |
 | **Wind speed (m/s)**         |Continuous |   The speed that the air is moving in m/s                  |
 | **Visibility (10m)**         |Continuous |   Distance (10 m scale) of clearness                       |
