@@ -1,7 +1,5 @@
 ---
 title: "ML1 - Seoul Bike Sharing Modelling"
-author: "Wan Ying Hsu; Margarita Shebanova; Chueh Yang; Elvina Chen-Hsin Yang"
-date: "10/6/2021"
 output: 
   html_document:
     df_print: paged
