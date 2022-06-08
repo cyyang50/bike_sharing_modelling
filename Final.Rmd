@@ -1,0 +1,1126 @@
+---
+title: "ML1 - Seoul Bike Sharing Modelling"
+author: "Wan Ying Hsu; Margarita Shebanova; Chueh Yang; Elvina Chen-Hsin Yang"
+date: "10/6/2021"
+output: 
+  html_document:
+    df_print: paged
+    toc_depth: 4
+    theme: cosmo
+    number_sections: true
+    toc: true
+    toc_float:
+      smooth_scroll: false
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache=TRUE, message=FALSE, warning=FALSE, attr.output='style="max-height: 200px;"')
+```
+
+# Seoul Bike Sharing Business Story
+<center>
+![Seoul Bike Sharing](/Users/elvinayang/Desktop/Data Workspace/SeoulBike.jpeg)
+</center>
+
+Biking has become a modern, eco-friendly and comfortable way that many people nowadays use it as their daily transportation. Bike-sharing has been widely promoted in various metropolitan cities because it is not only just a tool hopping between different places, but also offers leisure and relaxing experience of transportation.
+
+Seoul, the capital of South Korea, like many countries, has its own bike-sharing system. The system provides its service via an app, that allows registered users to access a city-wide bike fleet for private usage. Moreover, people can rent and return a bike from one bike station to another that belongs to the same network. 
+
+The Seoul bike-sharing system was launched in 2017. Its user-base has grown rapidly within a short time. In bike rental business, it is essential to have sufficient amount of bikes that meets customer needs. Thus, the  availability and accessibility of bikes have listed questions of how can bike rental business maintain stable supplies to meet riders' demands for bikes, and how does the business utilize the demand to implement price strategies (for example, fixed price at peak time while discounted price during the low period).
+
+To solve these puzzles, having a prediction of bike demands would help business optimize its resources and operations and provide stable supply to riders. This project aims to use various machine learning models to predict demand for rental bikes. On the other hand, an hourly-based prediction of bike usage can be used for adjusting rental price accordingly with the demands, time, and data events.
+
+image source: https://shorturl.at/btIOP
+
+
+# Data Processing and Understanding 
+
+## Process the Dataset
+
+The dataset is collected from Kaggle (source: https://www.kaggle.com/saurabhshahane/seoul-bike-sharing-demand-prediction). There are totally 8,760 rows × 14 columns in the original data set. 
+
+```{r include=TRUE, out.width = '90%'}
+bikes <- read.csv("SeoulBikeData_Original.csv", header = TRUE, 
+                  fileEncoding = "Latin1", check.names = F)
+head(bikes)
+```
+
+The Data variables, type and description are shown in the following table. The variables of the data set meet our research requirements.  
+
+**Data variables and description:**  
+
+
+|*Variables*                   |  *Type*   |   *Description*                                            |
+|:-----------                  |:----------|:-----------------------------------------------------------|
+|**Date**                      |MM/DD/YY   |The date of the record (2017 Dec. -2018 Nov)                |
+| **Rented Bike count**        |Discrete  |   The number of bikes rented for the hour of the data      |
+| **Hour**                     |Categorical|   Each hour of the record for one day                      |
+| **Temperature(°C)**       |Continuous |   The environment temperature in °C recorded               |
+| **Humidity(%)**              |Continuous |   The relative environment humidity in %                   |
+| **Wind speed (m/s)**         |Continuous |   The speed that the air is moving in m/s                  |
+| **Visibility (10m)**         |Continuous |   Distance (10 m scale) of clearness                       |
+| **Dew point temperature(°C)**|Continuous |   The temperature to which the air would have to cool to reach saturation|
+| **Solar Radiation (MJ/m2)**  |Continuous |   The electromagnetic radiation emitted by the sun in MJ/m2|
+| **Rainfall(mm)**             |Continuous |   Height of the precipitation in mm                        |
+| **Snowfall (cm)**            |Continuous |   Height of the snowfalls in cm                            |
+| **Seasons**                  |Categorical|   Spring, Summer, Autumn, Winter                           |
+| **Holiday**                  |Categorical|   Holiday, Workday (No Holiday)                            |
+| **Functioning Day**          |Categorical|   The days when the rental bike system operate (Yes) or does not operate (No)|
+
+
+All data were inspected first to see whether any NaN values and duplicated rows existing. The column ‘Date’ was divided into ‘Year’, ‘Month’, ‘Day’, and ‘Weekdays’ for analyzing purposes. After processing the data, the data set contains 8,760 rows × 21 columns.  
+
+The index of variables and its corresponding items:  
+**Day_of_Week:{ 'Sunday': 1, 'Monday': 2, 'Tuesday': 3, 'Wednesday': 4, 'Thursday': 5, 'Friday': 6, 'Saturday': 7}**  
+
+First, we checked whether there's any duplicated or missing data in the data set. 
+```{r}
+anyDuplicated(bikes)
+sum(is.na(bikes))
+```
+Here we change the data respectively to year, month, day, and day of week. 
+
+```{r include=TRUE}
+library(lubridate)
+
+Hourr <- function(x) {
+  val2<-paste(x,":00",sep="")
+  return(val2)
+}
+bikes$hour1 <- unlist(lapply(bikes$Hour,Hourr))
+bikes$Date <- strptime(as.character(bikes$Date),format="%d/%m/%Y")
+bikes$year <- year(bikes$Date)
+bikes$month <- month(bikes$Date)
+bikes$day <- day(bikes$Date)
+bikes$wday <- wday(bikes$Date)
+```
+
+```{r include=TRUE}
+bikes$fday <- bikes$'Functioning Day'
+bikes$fday[which(bikes$fday=="Yes")] <- 1
+bikes$fday[which(bikes$fday=="No")] <- 0
+bikes <-subset(bikes,fday==1)
+bikes$'Functioning Day' <- NULL
+bikes$fday <- NULL
+bikes$hour1 <- NULL
+```
+
+After transforming data related to date and time, we then filter out the "Yes" rows for the functioning day, since "No" means the service wasn't working. All rows which 'Functioning Day' equals to 0 (did not operate) were deleted. Last, because all data left have functioning day = 1, this column is also deleted for simplifying the data set. 
+
+```{r include=TRUE}
+names(bikes)[2] <- "bike_count"
+names(bikes)[3] <- "hour"
+names(bikes)[4] <- "temperature"
+names(bikes)[5] <- "humidity"
+names(bikes)[6] <- "wind_speed"
+names(bikes)[7] <- "visibility"
+names(bikes)[8] <- "dew"
+names(bikes)[9] <- "solar"
+names(bikes)[10] <- "rainfall"
+names(bikes)[11] <- "snowfall"
+names(bikes)[12] <- "season"
+names(bikes)[13] <- "holiday"
+
+bikes$season <- as.factor(bikes$season)
+bikes$year <- as.factor(bikes$year)
+bikes$month <- as.factor(bikes$month)
+bikes$day <- as.factor(bikes$day)
+bikes$wday <- as.factor(bikes$wday)
+bikes$hour <- as.factor(bikes$hour)
+bikes$holiday <- as.factor(bikes$holiday)
+```
+
+We renamed the columns to simpler terms for coding purpose and set as factors to categorical variables.
+
+```{r include=TRUE}
+bikes$highdemand <- bikes$bike_count
+bikes$highdemand[bikes$bike_count >= 500] <- 1
+bikes$highdemand[bikes$bike_count < 500] <- 0
+bikes$highdemand <- as.factor(bikes$highdemand)
+bikes <- bikes[c(1,14,15,16,17,3,2,4,5,6,7,8,9,10,11,12,13,18)]
+str(bikes)
+```
+
+Using the 500 as a reference for determining high demand, the bike number greater than 500 is marked as '1' (high demand), conversely the bike number less than 500 is marked as '0'(not high demand). After reordering the columns, our data set was ready for further modeling processes. 
+
+```{r include=TRUE}
+library(caret)
+library(dplyr)
+set.seed(1)
+indices <- createDataPartition(bikes$hour, p = 0.8, list = FALSE)
+train <- bikes %>% slice(indices)
+test <- bikes %>% slice(-indices)
+#write.csv(train, file="train.csv", row.names = F)
+#write.csv(test, file="test.csv", row.names = F)
+```
+Last, we separated the dataset into 80% for train models and 20% to test models randomly by hour. (The datasets were exported as CSV files for team members to process models on their own devices.)
+
+## Graphic Analysis
+
+### Graphical Analysis - Continuous Variables
+
+```{r include=TRUE, out.width = '90%'}
+library(gridExtra)
+library(grid)
+library(ggplot2)
+library(lattice)
+library(RColorBrewer)
+
+g1= ggplot(bikes, aes(temperature, bike_count))+
+  geom_point(aes(color=temperature), alpha =0.2)+
+  scale_color_gradient(high='red3',low='navy')+ theme_bw()
+g2 = ggplot(bikes, aes(x=humidity, bike_count)) +
+  geom_point(aes(color=humidity), alpha =0.2)+
+  scale_color_gradient(high='red3',low='navy')+ theme_bw()
+g3 = ggplot(bikes, aes(x=wind_speed, bike_count)) +
+  geom_point(aes(color=wind_speed), alpha =0.2)+
+  scale_color_gradient(high='red3',low='navy')+ theme_bw()
+g4 = ggplot(bikes, aes(x=visibility, bike_count)) +
+  geom_point(aes(color=visibility), alpha =0.2)+
+  scale_color_gradient(high='red3',low='navy')+ theme_bw()
+grid.arrange(g1, g2, g3, g4, ncol=2)
+g5 = ggplot(bikes, aes(dew, bike_count))+
+  geom_point(aes(color=dew), alpha =0.2)+
+  scale_color_gradient(high='red3',low='navy')+ theme_bw()
+g6 = ggplot(bikes, aes(x=solar, bike_count)) +
+  geom_point(aes(color=solar), alpha =0.2)+
+  scale_color_gradient(high='red3',low='navy')+ theme_bw()
+g7 = ggplot(bikes, aes(x=rainfall, bike_count)) +
+  geom_point(aes(color=rainfall), alpha =0.2)+
+  scale_color_gradient(high='red3',low='navy')+ theme_bw()
+g8 = ggplot(bikes, aes(x=snowfall, bike_count)) +
+  geom_point(aes(color=snowfall), alpha =0.2)+
+  scale_color_gradient(high='red3',low='navy')+ theme_bw()
+grid.arrange(g5, g6, g7, g8, ncol=2)
+```
+
+### Graphical Analysis - Categorical Variables
+
+We use a "template graph" to shorten our code and to reduce copy and paste actions.
+
+```{r, include=TRUE, out.width = '90%'}
+boxplot.t <- ggplot(data = bikes, mapping = aes(y = bike_count)) + 
+  theme(legend.position = "none") + geom_boxplot() + labs(y="Bike_count")
+b1 <- boxplot.t + aes(x = year, fill=year) + labs(x="Year", title="Rents per Year") + 
+  scale_fill_brewer(palette = "Greens")
+b2 <- boxplot.t + aes(x = season, fill=season) + labs(x="Season", title="Rents per Season") + 
+  scale_fill_brewer(palette = "Greens")  
+b3 <- boxplot.t + aes(x = month, fill = month) + labs(x="Month", title="Rents per Months") + 
+  scale_fill_manual(values = colorRampPalette(brewer.pal(9, "Greens"))(12))
+b4 <- boxplot.t + aes(x = day, fill = day) + labs(x="Day", title="Rents per Day Number") + 
+  scale_fill_manual(values = colorRampPalette(brewer.pal(9, "Greens"))(31))
+grid.arrange(b1, b2, b3, b4, nrow = 2, ncol = 2)
+b5 <- boxplot.t + aes(x = wday, fill=wday) + labs(x="Weekday", title="Rents per Weekday") + 
+  scale_fill_brewer(palette = "Greens")
+b6 <- boxplot.t + aes(x = hour, fill=hour) + labs(x="Hour", title="Rents per Hour") + 
+  scale_fill_manual(values = colorRampPalette(brewer.pal(9, "Greens"))(24))
+b7 <- boxplot.t + aes(x = holiday, fill=holiday) + labs(x="Holiday", title="Rents during Holidays") + scale_fill_brewer(palette = "Greens")
+grid.arrange(b5, b6, b7, nrow = 2, ncol = 2)
+```
+
+According to the graphs, the predictors *wday*, *day*, *year* do not seem to be very important. From the boxplot of the *year* variable, we can see that we do not have data for the whole 2017 and 2018 years. Importance of predictors *season*, *month*, *hour*, *holiday* seems to be high.
+
+### Graphical Analysis - Binomial "high-demand"
+
+```{r include=TRUE, message=FALSE, warning=FALSE, out.width = '90%'}
+s1 <- bikes %>%
+  ggplot(aes (x=temperature, fill = highdemand)) + geom_histogram(position="stack")
+s2 <- bikes %>%
+  ggplot(aes (x=humidity, fill = highdemand)) + geom_histogram(position="stack")
+s3 <- bikes %>%
+  ggplot(aes (x=wind_speed, fill = highdemand)) + geom_histogram(position="stack")
+s4 <- bikes %>%
+  ggplot(aes (x=visibility, fill = highdemand)) + geom_histogram(position="stack")
+grid.arrange(s1, s2, s3, s4, ncol=2)
+s5 <- bikes %>%
+  ggplot(aes (x=solar, fill = highdemand)) + geom_histogram(position="stack")
+s6 <- bikes %>%
+  ggplot(aes (x= rainfall, fill = highdemand)) + geom_histogram(position="stack")
+s7 <- bikes %>%
+  ggplot(aes (x= snowfall, fill = highdemand)) + geom_histogram(position="stack") 
+grid.arrange(s5, s6, s7, ncol=2)
+```
+
+```{r, include=TRUE, out.width = '90%'}
+g13 <- ggplot(bikes, aes(x = hour, y = bike_count, fill = highdemand)) + 
+    geom_bar(stat="identity", position=position_dodge())
+g14 <- ggplot(bikes, aes(x = month, y = bike_count, fill = highdemand)) + 
+    geom_bar(stat="identity", position=position_dodge())
+g15 <- ggplot(bikes, aes(x = holiday, y = bike_count, fill = highdemand)) + 
+    geom_bar(stat="identity", position=position_dodge())
+g16 <- ggplot(bikes, aes(x = wday, y = bike_count, fill = highdemand)) + 
+    geom_bar(stat="identity", position=position_dodge())
+grid.arrange(g13, g14, g15, g16, ncol=2)
+```
+ Furthermore, highdemand showed differences in **hour**, **months**, **week days** and **if-holidays**.
+
+# Linear Model
+
+From a business perspective, it'd be interesting to know what factors impact the count of total rental bikes. However, since Linear Model can only be used to predict continuous variables, bike count, as a count variable, cannot be used directly as a predictor here. Therefore, we'll transform the count data with the **square-root function** and fit a Linear Model. 
+
+## Graphic Analysis
+
+### Effect of Various Factors on Bike Counts
+
+```{r include=TRUE, out.width = '90%'}
+l1 = ggplot(data = bikes, mapping = aes(y = bike_count, x = temperature)) +
+      geom_point(color="gray25") + geom_smooth(color="brown3") + ylab("Rental Bike Count") 
+l2 = ggplot(data = bikes, mapping = aes(y = bike_count, x = humidity)) +
+      geom_point(color="gray25") + geom_smooth(color="brown3") + ylab("Rental Bike Count") 
+l3 = ggplot(data = bikes, mapping = aes(y = bike_count, x = wind_speed)) +
+      geom_point(color="gray25") + geom_smooth(color="brown3") + ylab("Rental Bike Count") 
+l4 = ggplot(data = bikes, mapping = aes(y = bike_count, x = visibility)) +
+      geom_point(color="gray25") + geom_smooth(color="brown3") + ylab("Rental Bike Count") 
+grid.arrange(l1, l2, l3, l4, ncol=2)
+```
+
+The relationship between bike counts and temperature looks like a non-linear relationship, where the bike count increases by temperature until 30-degree and starts to decrease from this point. With humidity, wind speed and visibility, there were slight linear relationships in between, but the effects aren't too obvious. 
+
+```{r include=TRUE, out.width = '90%'}
+l5 = ggplot(data = bikes, mapping = aes(y = bike_count, x = dew)) +
+      geom_point(color="gray25") + geom_smooth(color="brown3") + ylab("Rental Bike Count") 
+l6 = ggplot(data = bikes, mapping = aes(y = bike_count, x = solar)) +
+      geom_point(color="gray25") + geom_smooth(color="brown3") + ylab("Rental Bike Count")
+l7 = ggplot(data = bikes, mapping = aes(y = bike_count, x = rainfall)) +
+      geom_point(color="gray25") + geom_smooth(color="brown3") + ylab("Rental Bike Count") 
+l8 = ggplot(data = bikes, mapping = aes(y = bike_count, x = snowfall)) +
+      geom_point(color="gray25") + geom_smooth(color="brown3") + ylab("Rental Bike Count")
+grid.arrange(l5, l6, l7, l8, ncol=2)
+```
+
+With variables such as dew points, solar radiation, rainfall and snowfall, the linear relationship stay pretty slight for all. 
+
+### Interaction Examination
+
+```{r include=TRUE, out.width = '90%'}
+par(mfrow = c(2, 2))
+interaction.plot(bikes$temperature, bikes$holiday, bikes$bike_count, 
+                 pch = c(19, 17), type = "b", col=brewer.pal(n = 4, name="Set2"))
+interaction.plot(bikes$holiday, bikes$season, bikes$bike_count, 
+                 pch = c(19, 17), type = "b", col=brewer.pal(n = 4, name="Set2"))
+interaction.plot(bikes$hour, bikes$holiday, bikes$bike_count, 
+                pch = c(19, 17), type = "b", col=brewer.pal(n = 5, name="Set2"))
+interaction.plot(bikes$wday, bikes$season, bikes$bike_count, 
+                 pch = c(19, 17), type = "b", col=brewer.pal(n = 4, name="Set2"))
+```
+
+Instead of month, season was taken in the interaction plot to have a clearer picture. But month would be used as variable, if interaction exists.
+
+Lines in the interaction plots of season/holiday and holiday/hour stay parallel.Therefore, there's no significant interaction between these factors. However, intersection appeared between weekday and month, which means that there might be **interaction between weekday/month and temperature/holiday** effects on bike counts. We'll consider this effect in the Linear and GAM models.
+
+## Modeling
+### Fitting the model with ALL variables
+
+We start fitting the model by containing all variables and use drop1 function to examine variables that can be removed. As mentioned above, the count data of bike counts will be transformed with the **square-root function** here in order to fit a Linear Model.
+
+```{r include=TRUE, paged.print=FALSE}
+lm.bikes.0 <- lm(sqrt(bike_count) ~ temperature + humidity + wind_speed + visibility + dew 
+                 + solar + rainfall + snowfall + month + holiday + hour + wday, data = train)
+drop1(lm.bikes.0, test = "F")
+```
+
+From the p-value, factors including temperature, wind speed and snowfall don't have significant influence on bike count. Therefore, the model below will remove these predictors.
+
+```{r include=TRUE, paged.print=FALSE}
+lm.bikes.1 <- lm(sqrt(bike_count) ~ humidity + visibility + dew + solar 
+                 + rainfall + holiday + hour + wday, data = train)
+drop1(lm.bikes.1, test = "F")
+```
+Under the drop1(), every variable is now significant. We'll add interaction variables into the model and conduct further inspection. 
+
+```{r include=TRUE, paged.print=FALSE}
+lm.bikes.2 <- lm(sqrt(bike_count) ~ humidity + visibility + dew + solar + rainfall + holiday 
+                 + hour + wday + temperature:holiday + wday:month, data = train)
+drop1(lm.bikes.2, test = "F")
+```
+Again every variable looks significant. 
+
+```{r include=TRUE, paged.print=FALSE}
+summary(lm.bikes.0)$r.squared
+summary(lm.bikes.1)$r.squared
+summary(lm.bikes.2)$r.squared
+anova(lm.bikes.0, lm.bikes.1)
+anova(lm.bikes.0, lm.bikes.2)
+linear_model <- lm.bikes.2
+```
+
+Model 2 has the highest R-Square, followed by model 0 and model 1. Anova test, on the other hand, showed both model 1 and model 2 have significant difference to model 0. Consider the R-Square, we'll choose the **lm.bikes.2 model** for the next model evaluation.
+
+### Model Evaluation and Prediction
+
+```{r include=TRUE, echo=FALSE, fig.dim = c(8, 6), out.width = '80%', fig.align = 'center'}
+par(mfrow = c(2,2))
+plot(linear_model)
+```
+```{r include=TRUE}
+pred.lm <- predict(linear_model, newdata = test)
+R.lm <- cor(pred.lm, test$bike_count)^2
+R.lm
+```
+**Conclusion:** From the residual analysis graphs, a long-tail effect on the left side in the QQ plot. While the in-sample R-Square was 78%, it dropped into 70% in out-sample test. A linear model could explain about 70% of the dataset, however, it maybe not be the best model. 
+
+# Generalised Additive Model
+
+```{r echo=T, results='hide'}
+library(mgcv)
+library(forecast)
+library(stats)
+```
+
+## Graphical analysis
+
+Plotting the data.
+
+```{r include=TRUE, out.width = '90%'}
+bikes$Date <- as.Date(bikes$Date, format = "%Y-%m-%d")
+p1 <- ggplot(data = bikes, mapping = aes(y = bike_count, x = Date)) +
+      geom_point(color="gray25") + geom_smooth(color="brown3") + ylab("Rental Bike Count")
+h2 <- ggplot(data = bikes, mapping = aes(x = bike_count)) + ggtitle("Histogram of Bikes Rentals") + geom_histogram(binwidth = 30)
+grid.arrange(p1, h2, ncol = 2)
+```
+
+The distribution of Bikes Rentals is skewed. However, we will not log-transform the response variable (Bikes Rentals) as there are 0 values. 
+
+### Graphical Analysis - Categorical Variables & Continuous Variables
+
+**Box plots showed in the 3.1 Graphic Analysis section** indicates that, the predictors wday, day, year do not seem to be very important. From the boxplot of the year variable, we can see that we do not have data for the whole 2017 and 2018 years. Importance of predictors *season*, *month*, *hour*, *holiday* seems to be high.
+
+Meanwhile, *Scatter plots with Smoother in the Linear Model* have shown the response variable against each continuous predictor, to determine which kind of effect predictors have on the response variable.
+
+### Panelling
+
+Based on the boxplots, the predictors *season0*, *holiday*, *hour*, *month* are expected to be important. The effect of all the continuous predictors can differ among these categorical variables. In the graph below, we will inspect, whether *temperature* interacts with *season*.
+
+```{r out.width = '90%'}
+ggplot(data = bikes, mapping = aes(y = bike_count, x = temperature)) +
+      geom_point(color="gray25") + geom_smooth(color="brown3") + facet_wrap(. ~season)
+```
+
+All relationships do not seem to be linear. To estimate the kind of relationships, we will fit a GAM model and see what the estimated complexity of the smooth term is.
+
+## Modeling
+
+### Fitting the starting model
+
+The starting GAM contains all continuous predictors which are taken as smooth terms. Since we are modeling count data, we will use the "quasipoisson" family. 
+
+```{r include=TRUE}
+gam.0 <- gam(bike_count ~ s(temperature) + s(humidity) + s(wind_speed) + s(visibility) + s(dew)
+             + s(solar) + s(rainfall) + s(snowfall), data = train, family = quasipoisson())
+summary(gam.0)
+```
+
+If we use a strict 5% threshold, there is weak evidence that the smooth term of *snowfall* may play a role. According to the edf values, none of the strongly significant smooth terms has a linear effect. Most of the terms have very complex effects (more than 7). Removing *s(snowfall)*. 
+
+```{r include=TRUE}
+gam.1 <- gam(bike_count ~ s(temperature) + s(humidity) + s(wind_speed) + s(visibility)
+              + s(dew) + s(solar) + s(rainfall), data = train, family = quasipoisson())
+summary(gam.1)
+```
+
+All predictors are strongly significant (p-values<5%). We compare the two models above with the function anova(). 
+
+```{r, cache=TRUE}
+anova(gam.0, gam.1, test="F")$Pr  # p-value
+```
+
+The output shows that there is no strong evidence that the 1st model better fits the data. Thus, we will further examine the less complex model.
+
+### Model “Development”
+
+According to the graphical analysis, the factors *season*, *month*, *holiday*, *hour*, and *wday* seemed to be important. Hence, we will add these predictors to our model. However, since predictors *season* and *month* are closely related, we will choose one of the them **month** to have a more comprehensive insight.
+
+```{r, cache=TRUE}
+gam.2 <- gam(bike_count ~ month + s(temperature) + s(humidity) + s(wind_speed) + s(visibility) 
+             + s(dew) + s(solar) + s(rainfall), data = train, family = quasipoisson())
+summary(gam.2)$r.sq
+anova(gam.1, gam.2, test="F")$Pr
+```
+
+Adding the categorical variable *hour* to our model.
+
+```{r, cache=TRUE}
+gam.3 <- gam(bike_count ~ hour + month + s(temperature) + s(humidity) + s(wind_speed) + 
+            s(visibility) + s(dew) + s(solar) + s(rainfall), 
+            data = train, family = quasipoisson())
+capture.output(summary(gam.3))[54:61]
+anova(gam.2, gam.3, test="F")$Pr
+```
+There is a weak evidence that the smooth term of *visibility* may play a role (p-value<5%). Dropping *visibility*.
+
+```{r, cache=TRUE}
+gam.4 <- gam(bike_count ~ hour + month + s(temperature) + s(humidity) + s(wind_speed) + s(dew)
+             + s(solar) + s(rainfall), data = train, family = quasipoisson())
+#summary(gam.4)
+anova(gam.3, gam.4, test="F")$Pr
+```
+
+We will further examine the less complex model (*gam.5*). Adding the categorical variable *holiday*.
+
+```{r, cache=TRUE}
+gam.5 <- gam(bike_count ~ hour + holiday + month + s(temperature) + s(humidity) + s(wind_speed) 
+             + s(dew) + s(solar) + s(rainfall), data = train, family = quasipoisson())
+summary(gam.5)$r.sq
+anova(gam.4, gam.5, test="F")$Pr
+```
+
+Adding the categorical variable *wday*.
+
+```{r, cache=TRUE}
+gam.6 <- gam(bike_count ~ hour + holiday + month + wday + s(temperature) + s(humidity) + 
+             s(wind_speed) + s(dew) + s(solar) + s(rainfall), 
+             data = train, family = quasipoisson())
+summary(gam.6)$r.sq
+anova(gam.5, gam.6, test="F")$Pr
+```
+
+All predictors of *gam.5* and *gam.6* are strongly significant (p-values<5%). The higher adjusted R-squared value and the ANOVA output show that there is strong evidence that the model with more parameters (*gam.6*) better fits the data.
+
+### Interactions with smooth terms
+
+In the graphs, we have seen that *temperature* appeared to interact with categorical variables. We will inspect whether a different smooth term for *temperature* is needed for each *month*. 
+
+```{r, cache=TRUE}
+gam.7 <- gam(bike_count ~ hour + holiday + month + wday + s(temperature, by = month) + 
+               s(humidity)+ s(wind_speed) + s(dew) + s(solar) + s(rainfall), 
+             data = train, family = quasipoisson())
+capture.output(summary(gam.7))[78:80]
+anova(gam.6, gam.7, test="F")$Pr
+```
+
+The last model shows the highest value of an adjusted R-squared (0.87). Moreover, the ANOVA output indicates that there is strong evidence that the **gam.6** model better fits the data.
+
+## Model Prediction
+
+Make predictions on the test data for the models with high R-squared values.
+
+```{r}
+pred.gam5 <- predict.gam(gam.5, newdata = test)
+pred.gam6 <- predict.gam(gam.6, newdata = test)
+pred.gam <- predict.gam(gam.7, newdata = test)
+```
+
+Compute R-squared to evaluate out-of-sample performance.
+
+```{r}
+cor(pred.gam5, test$bike_count)^2
+cor(pred.gam6, test$bike_count)^2
+cor(pred.gam, test$bike_count)^2
+```
+We will use **gam.7** for the final predictions, as it has the highest R-squared.
+
+```{r}
+R.gam <- cor(pred.gam, test$bike_count)^2
+```
+
+### Visualisation of Residuals for the Final Model
+
+```{r, include=TRUE, echo=FALSE, out.width = '90%'}
+resid <- residuals(gam.7, type = "deviance")
+linpred <- napredict(gam.7$na.action, gam.7$linear.predictors)
+observed.y <- napredict(gam.7$na.action, gam.7$y)
+par(mfrow =c(2,2))
+qq.gam(gam.7, rep = 0, level = 0.9, type = "deviance", rl.col = 2, rep.col = "gray80")
+hist(resid, xlab = "Residuals", main = "Histogram of residuals")
+plot(linpred, resid, main = "Resids vs. linear pred.", 
+     xlab = "linear predictor", ylab = "residuals")
+plot(fitted(gam.7), observed.y, xlab = "Fitted Values", 
+     ylab = "Response", main = "Response vs. Fitted Values")
+```
+
+# GLM with Poisson
+## Define Use Case and Choose a Model
+
+```{r include=TRUE, fig.width = 6, fig.height= 4, fig.align = 'center'}
+library(car)
+library("performance")
+boxplot(bike_count ~ month, data = bikes, col=c('azure3', 'azure3','mistyrose', 
+        'mistyrose','mistyrose','powderblue','powderblue', 'powderblue',
+        'darkgoldenrod2','darkgoldenrod2','darkgoldenrod2', 'azure3'))
+abline(h=500,lwd=2,lty=2, col="blue")
+```
+
+From the graph, it is observed that amount of rented bike between April and November and on non-holiday are higher than 500, which close to median (524).  
+
+This model is for predicting maximum number of bikes needed. The response variable is the amount of rented bike. It is not continuous, not negative, integer and countable. Therefore, the **Poisson Model** is applied. Since the amount of rental bikes from April and November and non-holidays is relatively high, we only use the data that meets the above conditions and delete the dates that operation was not provided. The choosing process is processed in both train and test dataset, which are named as **train.p and test.p**.
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+train.p <- subset(train, month %in% c(4,5,6,7,8,9,10,11))
+train.p <- subset(train.p, holiday=="No Holiday")
+train.p <- subset(train.p, select = c(-Date, -year, -day, -wday, -season, 
+                                      -holiday, -season, -highdemand))
+test.p <- subset(test, month %in% c(4,5,6,7,8,9,10,11))
+test.p <-subset(test.p, holiday=="No Holiday")
+test.p <-subset(test.p, select = c(-Date, -year, -day, -wday, -season, 
+                                   -holiday, -season, -highdemand))
+```
+
+
+## Build a model
+### A Full Posisson Model
+```{r include=TRUE, message=FALSE, warning=FALSE}
+glm.full0 <- glm(bike_count ~ month + hour + temperature + humidity + wind_speed + 
+                       visibility + dew + solar + rainfall + snowfall, family = "poisson", 
+                 data = train.p)
+summary(glm.full0)
+```
+Build the first model (glm.full0) with all variables. All variables are significant.
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+vif(glm.full0)
+```
+After **measuring collinearity**, the variable "month", temperature", "humidity" and "dew" showed serious collinearity problems. The variables "hour" and "solar" have collinearity problems as well (GVIFs are above 5). 
+
+**Remove 'humidity'**: The "humidity" in the data is 'relative humidity'. Relative humidity is the percent of saturation at a given temperature; it depends on moisture content and temperature. It could be calculated with temperature and dew point temperature. Dew point is the temperature at which the air is saturated (100 percent relative humidity). It is dependent on only the amount of moisture in the air. For avoiding collinearity, 'humidity' is removed. 
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+glm.full1 <- glm(bike_count ~  month + hour + temperature + wind_speed + 
+                            visibility + dew + solar + rainfall + snowfall, 
+                 family = "poisson", data = train.p)
+summary(glm.full1)
+```
+All variables are significant.
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+vif(glm.full1)
+```
+
+The serious level of collinearity decreased, however, the GVIF of variable "month" and  temperature" are still higher than 10.
+As we all know, 'temperature' varies with ‘month’, hence, there must be a correlation or collinearity between them. On the other hand, 'month' is related to summer vacation, which may influence the amount of rental bike as well. As a result, both variable are kept.  
+
+```{r include=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+drop1(glm.full1, test = "F")
+
+glm_w <- glm(bike_count ~ month + hour + temperature +  
+                       visibility + dew + solar + rainfall + snowfall, 
+             family = "poisson", data = train.p)
+capture.output(summary(glm_w))[56]
+```
+When excluding the "wind speed", the AIC didn't decrease. So, we keep the variables "wind speed". Given by the graphic analysis, the temperature variable doesn't show the liner trend. It seems a quadratic or cubic effect.
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+glm.full2 <- glm(bike_count ~ month + hour + poly(temperature, degree=2) + wind_speed + 
+                 visibility + dew + solar + rainfall + snowfall, 
+                 family = "poisson", data = train.p)
+summary(glm.full2)
+glm.full3 <- glm(bike_count ~ month + hour + poly(temperature, degree=3) +  wind_speed + 
+                visibility + dew + solar + rainfall + snowfall, 
+                family = "poisson", data = train.p)
+summary(glm.full3)
+```
+After adding cubic term, the model "glm.full3" shows lower AIC value.
+
+Poisson GLM assumes that the mean and variance of the response variable increase at the same rate. If the residual deviance of the fitted model is bigger than the residual degrees of freedom, then the model has overdispersion. Overdispersion indicates that a Poisson distribution does not adequately model the variance and is not appropriate for the analysis. The values of model "glm.full3" exceeding 110.5332 are problematic, when it should be 1.  
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+#Goodness of fit = Residual Deviance / degrees of freedom
+ods <- glm.full3$deviance / glm.full3$df.residual
+ods
+```
+
+### Build the Quasipoisson Model
+```{r include=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+glm.full3q <- glm(bike_count ~ month + hour + poly(temperature, degree=3) + wind_speed + 
+                  visibility + dew + solar + rainfall + snowfall, 
+                  family = "quasipoisson", data = train.p)
+#summary(glm.full3q)
+capture.output(summary(glm.full3q))[12:52]
+capture.output(summary(glm.full1))[58]
+
+drop1(glm.full3q,test="F")
+```
+For considering overdispersion effect, family "quasipoisson" is used to build the new model. Most of p-values became larger (p > 0.05). It shows that all variables are insignificant. However, when the "quasipoisson" model is tested by "F test", it reveals that only the p value of "wind-speed" is larger than 0.05. Two results are completely different, therefore, negative binomial model is tested.  
+
+### Build the Negative Binomial Model
+```{r include=TRUE, message=FALSE, warning=FALSE}
+library(glmmTMB)
+glm.full3nb0 <- glmmTMB(bike_count ~  month + hour + poly(temperature, degree=3) 
+                        + wind_speed + visibility + dew + solar + rainfall+ snowfall, 
+                        data = train.p ,family="nbinom2")
+summary(glm.full3nb0)
+glm.full3nb <- glmmTMB(bike_count ~  month + hour + poly(temperature, degree=3) 
+                       + dew + solar + rainfall+ snowfall, data = train.p, family="nbinom2")
+summary(glm.full3nb)
+detach("package:glmmTMB", unload=TRUE)
+```
+
+Given by the result of negative binomial model, "wind-speed" and "visibility" are not significant. They are therefore removed from the model. And a new negative binomial model (glm.full3nb) is built.  
+
+## Evaluating and Comparing Model Performance
+Comparing three models, Negative Binomial model owns the smallest AIC value, although the RMSE is slightly higher than others.  
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+#Poisson
+model_performance(glm.full3)
+#Quasipoisson
+model_performance(glm.full3q)
+#Negative Binomial
+model_performance(glm.full3nb)
+```
+
+### Predicted vs.Residuals
+
+From the Predicted vs.Residuals plot, Poisson and Quasipoisson model are almost the same. Most residuals are between -50 and 50. Compared to the predicted value, these residual values seem reasonable. In contrary, residuals of Negative Binomial model are very large compared to its predicted value.  
+```{r include=TRUE, message=FALSE, warning=FALSE, out.width = '90%'}
+par(mfrow=c(3,1))
+#Poisson
+plot(predict(glm.full3,type="response",),residuals(glm.full3), main="Poisson",
+ylab="Residuals", xlab="Predicted", col="skyblue")
+abline(h=0,lty=1,col="gray")
+lines(lowess(predict(glm.full3,type="response"),residuals(glm.full3)),lwd=2,lty=2,col="blue")
+#Quasipoisson
+plot(predict(glm.full3q,type="response"),residuals(glm.full3q), main="Quasipoisson",
+ylab="Residuals", xlab="Predicted", col="skyblue")
+abline(h=0,lty=1,co1="gray")
+lines(lowess(predict(glm.full3q,type="response"),residuals(glm.full3q)),lwd=2,lty=2,col="blue")
+#Negative Binomial
+plot(predict(glm.full3nb,type="response"),residuals(glm.full3nb), main="Negative Binomial",
+ylab="Residuals", xlab="Predicted", col="skyblue")
+abline(h=0,lty=1,col="gray")
+lines(lowess(predict(glm.full3nb,type="response"),residuals(glm.full3nb)),lwd=2,lty=2,col="blue")
+```
+
+### Model Prediction
+```{r include=TRUE}
+pred.glm3 <- predict(glm.full3nb, type = "response", newdata = test.p)
+pred.glmq <- predict(glm.full3q, type = "response", newdata = test.p)
+pred.glmnb <- predict(glm.full3nb, type = "response", newdata = test.p)
+#Poisson
+R.glm3 <- cor(pred.glm3, test.p$bike_count)^2
+#Quasipoisson
+R.glmq <- cor(pred.glmq, test.p$bike_count)^2
+#Negative Binomial
+R.glmnb <- cor(pred.glmnb, test.p$bike_count)^2
+```
+
+**Conclusion:**
+Theoretically, Negative Binomial model is supposed to be the most reasonable of these three models. Since it doesn't show overdispersion problem as Poisson model. And unlike Quasipoisson model, its variables are significant. However, it residuals are the largest among three models. It may be caused by the correlation or collinearity from "month", "Hour" and weather related variable.  
+
+# GLM with Binomial
+## Model Fitting
+
+```{r include=TRUE, message=FALSE, warning=FALSE, out.width = '90%'}
+ggplot(data = bikes, aes(x = highdemand, y = bike_count, fill = highdemand))+
+    geom_boxplot(alpha=0.2) + labs(fill ="Demand > 500", y="Bike Count") + xlab("")
+```
+
+From the boxplots in the Graphic Analysis section, if-highdemand doesn't show a significant difference among weekdays. Therefore, this variable would be removed from the beginning model.
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+glm_bike1 <- glm(highdemand ~ month + hour + temperature + humidity + wind_speed + visibility 
+             + dew + solar + rainfall + snowfall + holiday, family = "binomial", data = train)
+summary(glm_bike1)
+```
+Visibility isn't significant in this model. Therefore, it'd be removed in the next model.
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+glm_bike2 <- update(glm_bike1, . ~ . -visibility)
+summary(glm_bike2)
+```
+The AIC value decreases slightly in the result. Next, we'll try to remove the temperature variable, which seems not significant in this model. 
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+glm_bike3 <- update(glm_bike2, . ~ . -temperature)
+summary(glm_bike3)
+```
+However, the AIC value in the model 3 is higher than the model 2. Therefore, we'll continue with the **model 2**. 
+Furthermore, the residual deviance is 2870.2  on 6743  degrees of freedom. If the data was truly Binomial distributed, these two numbers have to be the same. It indicates that this data is overdispersed. 
+
+### Overdispersion
+
+As the overdispersion appeared, we'll change to quasibinomial method. 
+
+```{r include=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+glm_bike_q1 <- glm(highdemand ~ month + hour + temperature + humidity + wind_speed + visibility 
+              + dew + solar + rainfall + snowfall + holiday, 
+              family = "quasibinomial", data = train)
+drop1(glm_bike_q1, test="F")
+```
+Visibility seems not to be significant in the model. It will be removed in the next one.
+
+```{r include=TRUE, message=FALSE, warning=FALSE, paged.print=FALSE}
+glm_bike_q2 <- update(glm_bike_q1, . ~ . -visibility)
+drop1(glm_bike_q2, test="F")
+```
+Since quasibinomial model doesn't provide an AIC value, we'll evaluate it in the next session by comparing the correct rates.
+
+## Model Evaluation
+
+```{r include=TRUE, echo=T, results='hide'}
+fitted(glm_bike2) %>% round(digits =2)
+fitted(glm_bike_q2) %>% round(digits =2)
+```
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+fitted.bikes.disc <- ifelse(fitted(glm_bike2) < 0.5,
+                            yes=0, no=1)
+b.obs.fit <- data.frame(obs = train$highdemand, fitted = fitted.bikes.disc)
+table(obs = b.obs.fit$obs,
+      fit = b.obs.fit$fitted)
+```
+2,955 observations were correctly labeled to low-demand and 3,237 were correctly labeled to high-demand. Meanwhile, 279 low-demand observations were falsely classified to be high-demand in this model, while 314 high-demand ones to be low-demand. 
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+fitted.bikes.disc_q <- ifelse(fitted(glm_bike_q2) < 0.5,
+                            yes=0, no=1)
+b.obs.fit_q <- data.frame(obs = train$highdemand, fitted = fitted.bikes.disc_q)
+table(obs = b.obs.fit_q$obs,
+      fit = b.obs.fit_q$fitted)
+```
+Two models produce the same result. So we'll just use one of them for further process.
+
+## Model Prediction
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+pred.glmb <- ifelse(predict(glm_bike2, type = "response", newdata = test) < 0.5,
+                            yes=0, no=1)
+matrix.glmb <- confusionMatrix(as.factor(test$highdemand), as.factor(pred.glmb))
+matrix.glmb
+acc.glmb <- matrix.glmb$overall['Accuracy']
+```
+**Conclusion:** Even though the model reached 0.91 accuracy, the fact of overdispersed data is needed to be considered. There might another way to better fit the binomial model family, or there might be another model beter than this one for the dataset. 
+
+
+# Support Vector Machine
+
+## Train the Model 
+
+From the graphic analysis section, it seems that high-demand factor showed differences in all variables. Therefore, we'll put them into the svm model.
+Firstly, we'd separate the data and start building a model.
+
+```{r include=TRUE, message=FALSE, warning=FALSE, out.width = '90%'}
+library(e1071)
+svm <- train[, c("highdemand", "month", "wday", "hour", "temperature", "humidity", "wind_speed", 
+                      "visibility", "dew", "solar", "rainfall", "snowfall", "holiday")]
+
+svm.test <- test[, c("month", "wday", "hour", "temperature", "humidity", "wind_speed", 
+                      "visibility", "dew", "solar", "rainfall", "snowfall", "holiday")]
+
+svm.test_truth <- test[, c("highdemand", "month", "wday", "hour", "temperature", "humidity", 
+                           "wind_speed", "visibility", "dew", "solar", "rainfall", "snowfall",
+                           "holiday")] %>% pull (highdemand)
+  
+bikes_svm <- svm(highdemand ~ ., svm, kernel = "linear", scale = TRUE, cost =10)
+plot(bikes_svm, svm, temperature ~ dew)
+```
+
+## Make Predictions
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+pred.svm <- predict(bikes_svm, svm.test)
+matrix.svm <- confusionMatrix(svm.test_truth, pred.svm)
+matrix.svm
+acc.svm <- matrix.svm$overall['Accuracy']
+```
+**Conclusion:** In the test data using the svm model, 739 observations were correctly labeled to low-demand and 813 were correctly labeled to high-demand. Meanwhile, 70 low-demand observations were falsely classified to be high-demand in this model, while 58 high-demand ones to be low-demand. Overall, the model has 92% accuracy. 
+
+# Neural Network
+## Data Understanding
+
+Read necessary libraries and choose necessary variables from the train and test data sets for the model. 
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+library(nnet)
+library(gamlss.add)
+bikes_nn <- train[, c("highdemand", "month", "wday", "hour", "temperature", "humidity", 
+              "wind_speed", "visibility", "dew", "solar", "rainfall", "snowfall", "holiday")]
+
+bikes_nn.test <- test[, c("highdemand", "month", "wday", "hour", "temperature", "humidity", 
+               "wind_speed", "visibility", "dew", "solar", "rainfall", "snowfall", "holiday")]
+str(bikes_nn)
+```
+
+```{r include=TRUE, message=FALSE, warning=FALSE, out.width = '90%'}
+bikes %>%
+  ggplot(aes (x=temperature, fill = highdemand)) +
+  geom_histogram(position="stack")
+```
+
+From the histogram of temperature and bike counts, most high demand events are located under higher temperature, while the low demand is more in the lower temperature. 
+
+## Build the Network
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+demand_net <- nnet(highdemand ~ ., data = bikes_nn, size = 10, maxit=100, 
+                   range=0.1, decay=5e-4, MaxNWts=65123)
+plot(demand_net)
+demand_net
+```
+
+## Make Predictions
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+pred.nn <- predict(demand_net, bikes_nn.test, type = "class")
+b_nn <- table(pred=pred.nn, true=bikes_nn.test$highdemand)
+b_nn
+```
+
+```{r include=TRUE, message=FALSE, warning=FALSE}
+matrix.nn <- confusionMatrix(as.factor(bikes_nn.test$highdemand), as.factor(pred.nn))
+matrix.nn
+acc.nn <- matrix.nn$overall['Accuracy']
+```
+
+Check the model accuracy. It shows that this model achieved 0.93 accuracy.
+
+**ROC Curve**
+
+```{r include=TRUE, fig4, out.width = '50%', fig.align = 'center'}
+library(ROCR)
+pred_raw <- predict(demand_net, bikes_nn.test, decision.values=TRUE, type="raw")
+pred <- ROCR::prediction(pred_raw, bikes_nn.test$highdemand)
+perf <- ROCR::performance(pred, "tpr", "fpr")
+plot(perf, lwd=2, col="blue")
+abline(a=0, b=1)
+```
+
+**Conclusion:**
+In the test data using the Neural Network model, 748 observations were correctly labeled to low-demand and 813 were correctly labeled to high-demand. Meanwhile, 70 low-demand observations were falsely classified to be high-demand in this model, while 49 high-demand ones to be low-demand. Overall, the model has 93% accuracy. 
+
+
+# Cross Validation & Conclusion
+
+To split the data into training and testing data sets, we used 20-fold (80% of the data are used to train the model and 20% to test it). 
+We aim at finding a model that maximizes the predictive performance of demand for bikes rentals. 
+
+Three models - Linear Model, Generalized Additive Model (GAM), GLM with Poisson - predict the *bike_count* variable. We used **R-squared** as a measure of fit because of the three following reasons: (1) ease of computation, (2) it makes sure that we have less extreme outliers, (3) it is symmetric. The last advantage is significant in our case because over- or underestimated demand for bikes rentals would damage customer experience of the service.
+
+The R-squared values are provided in the table below.
+
+```{r results='asis'}
+R.df <- data.frame(Linear_Model = round(R.lm,3), GAM = round(R.gam,3), 
+                   GLM_Poisson = round(R.glm3, 3), GLM_Quasipoisson = round(R.glmq, 3), 
+                   GLM_Negative_Binomial = round(R.glmnb, 3))
+R.df
+```
+
+Three other models - GLM with Binomial, Support Vector Machine, Neural Network - predict the binary *highdemand* variable. As a measure of predictive performance for these models, we used the **accuracy** value from confusion matrix (the degree of closeness to actual value).
+
+```{r results='asis'}
+acc.df <- data.frame(GLM_Binomial = round(acc.glmb,3), 
+                     SVM = round(acc.svm,3), Neural_Network = round(acc.nn, 3))
+acc.df
+```
+
+Neural Network has the highest accuracy (0.93). Thus, this model is recommended to forecast whether the level of demand is low or high.  
+
+## Conclusion
+
+**Predict Bike Counts**
+
+The prediction of bike count could help the business understand how much bikes they should get prepared for the user needs and how many maintenance workers to be deployed on this day under certain weather and other situations. When the number of bikes and the number of workers fits the number of bikes to be used on that day, the company could offer quality customer experiences for its users - smooth and convenient biking experience. 
+
+The R-squared values of three models - Linear Model, Generalized Additive Model (GAM), GLM with Poisson - show that GLM with Quasiposson would be the better model for the business to predict bike count, which could explain 79% of the data. 
+
+**Predict If-Highdemand**
+
+The assumption here is that, if the rental bike count is over 500, it belongs to high-demand situation; on the other hand, if it's below 500, it belongs to low-demand situation. 
+
+The prediction of high or low-demand could help the business allocate its resources better, from the number of workers to the number of bikes needed to be repaired. In the time of low-demand, for example, the company could send more workers on bike maintenance and repairing in the factory and allow only few workers outside monitoring bike-sharing stations. In the time of high-demand, instead, the company needs more bikes being used and more workers outside monitoring the stations.
+
+The accuracy values resulted from three models - GLM with Binomial, Support Vector Machine, Neural Network - show that Neural Network would be the better model for the company to predict high- or low-demand, with about 92.6% accuracy.
+
+**Modeling - a Never-Ending Story**
+
+We did split the original data set into train and test purposes. In other words, the accuracy of the models was tested with previous data. However, business operation, market competition and customer behavior change every day. Furthermore, the models included in this project aren't every modeling methods existing in the field. The results could be seen as a reference, rather than a best solution. Modeling, anyway, is a never-ending story - more latest data and more understanding of various predictors would definite improve and change the models. 
+
+# ABM & ABC
+## Agent-Based Model (ABM)
+### Installing packages for NetLogoR
+
+Since the NetLogoR package had been removed from the CRAN repository, we downloaded 20 libraries required for its installation.
+
+```{r}
+#install.packages("ellipsis")
+#install.packages("xfun")
+#install.packages("data.table", dependencies=TRUE)
+#install.packages("devtools")
+#require(devtools)
+
+#packageurl_1 <- "https://cran.r-project.org/src/contrib/fastmatch_1.1-0.tar.gz"
+#packageurl_2 <-"https://stat.ethz.ch/CRAN//src/contrib/DBI_1.1.1.tar.gz"
+#packageurl_3 <-"https://cran.r-project.org/src/contrib/bit_4.0.4.tar.gz"
+#packageurl_4 <-"https://cran.r-project.org/src/contrib/blob_1.2.1.tar.gz"
+#packageurl_5 <-"https://cran.r-project.org/src/contrib/plogr_0.2.0.tar.gz"
+#packageurl_6 <- "https://cran.microsoft.com/snapshot/2017-08-06/src/contrib/bit64_0.9-7.tar.gz"
+#packageurl_7 <-"https://cran.r-project.org/src/contrib/RSQLite_2.2.7.tar.gz"
+#packageurl_8 <- "https://cran.r-project.org/src/contrib/Archive/Require/Require_0.0.12.tar.gz"
+#packageurl_9 <- "https://cran.r-project.org/src/contrib/fpCompare_0.2.3.tar.gz"
+#packageurl_10 <- "https://cran.r-project.org/src/contrib/sp_1.4-5.tar.gz"
+#packageurl_11 <- "https://cran.r-project.org/src/contrib/raster_3.4-10.tar.gz"
+#packageurl_12 <- "https://cran.r-project.org/src/contrib/reproducible_1.2.7.tar.gz"
+#packageurl_13 <- "https://cran.r-project.org/src/contrib/htmlTable_2.2.1.tar.gz"
+#packageurl_14 <- "https://cran.r-project.org/src/contrib/viridis_0.6.1.tar.gz"
+#packageurl_15 <- "https://cran.r-project.org/src/contrib/Hmisc_4.5-0.tar.gz"
+#packageurl_16 <- "https://cran.r-project.org/src/contrib/Archive/SpaDES.tools/SpaDES.tools_0.3.6.tar.gz"
+#packageurl_17 <- "https://cran.r-project.org/src/contrib/Archive/NetLogoR/NetLogoR_0.3.7.tar.gz"
+
+#install.packages(packageurl_1, repos=NULL, type="source")
+#install.packages(packageurl_2, repos=NULL, type="source")
+#install.packages(packageurl_3, repos=NULL, type="source")
+#install.packages(packageurl_4, repos=NULL, type="source")
+#install.packages(packageurl_5, repos=NULL, type="source")
+#install.packages(packageurl_6, repos=NULL, type="source")
+#install.packages(packageurl_7, repos=NULL, type="source")
+#install.packages(packageurl_8, repos=NULL, type="source")
+#install.packages(packageurl_9, repos=NULL, type="source")
+#install.packages(packageurl_10, repos=NULL, type="source")
+#install.packages(packageurl_11, repos=NULL, type="source")
+#install.packages(packageurl_12, repos=NULL, type="source")
+#install.packages(packageurl_13, repos=NULL, type="source")
+#install.packages(packageurl_14, repos=NULL, type="source")
+#install.packages(packageurl_15, repos=NULL, type="source")
+#install.packages(packageurl_16, repos=NULL, type="source")
+#install.packages(packageurl_17, repos=NULL, type="source")
+```
+
+Downloading libraries.
+
+```{r}
+#library(NetLogoR)
+library(stringr)
+library(minpack.lm)
+```
+
+### Running an ABM simulation for spreading of news/diseases. 
+
+The simulation was run in a separate R-code file that is located **in our project zip file (ABM_simulation.R)**. The code is commented out here as it takes a long time to complete all computations. During the simulation process, the graphic that slows down the computation was disabled.
+
+Simulation of all the combinations of pubs [1-20] and agents [40-100] with *for loop*. 
+
+```{r}
+#for (number_agents in 40:100) {
+    #for (number_pubs in 1:20) {
+        ### 1. DEFINE THE SPACE AND AGENTS ###
+        
+        ## simulations parameters
+        
+        #simtime<-200               ## duration time of the simulation
+        #gridSize_x<-15             ## number of patches in the grid
+        #gridSize_y<-15
+        #displacement_normal<-0.1   ## speed of moving agents 
+        #displacement_pub<-0.01     ## speed in the pub
+        #plot_data_out<-numeric()
+        
+        ## world set up
+        
+        #w1 <- createWorld(minPxcor = 0, maxPxcor = gridSize_x-1, minPycor = 0, 
+        #                  maxPycor = gridSize_y-1)
+        #x_pub <- randomPxcor(w1,number_pubs)
+        #y_pub <- randomPycor(w1,number_pubs)
+        #w1 <- NLset(world = w1, agents = patches(w1), val = 0) 
+        #w1 <- NLset(world = w1, agents = patch(w1, x_pub, y_pub), val = 1) 
+        
+        ## agents set up
+        
+        #t1 <- createTurtles(n = number_agents, coords = randomXYcor(w1, n = number_agents), 
+        #                    breed="S", color="black") 
+        #t1 <- NLset(turtles = t1, agents = turtle(t1, who = 0), var = "breed", val = "I")
+        #t1 <- NLset(turtles = t1, agents = turtle(t1, who = 0), var = "color", val = "red") 
+        #t1 <- turtlesOwn(turtles = t1, tVar = "displacement", tVal = displacement_normal)
+        
+        #plot(w1, axes = 0, legend = FALSE, par(bty = 'n'))
+        #points(t1, col = of(agents = t1, var = "color"), pch = 20)
+        
+        ### 2. THE SIMULATION TIME LOOP ###
+        
+        #for (time in 1:simtime) { 
+            
+        #    t1 <- fd(turtles = t1, dist=t1$displacement, world = w1, torus = TRUE, out = FALSE) 
+        #    t1 <- right(turtles = t1, angle = sample(-20:20, 1, replace = F)) 
+        #    plot(w1, axes = 0, legend = FALSE, par(bty = 'n'))
+        #    points(t1, col = of(agents = t1, var = "color"), pch = 20)
+        #    meet <- turtlesOn(world = w1, turtles = t1, agents = t1[of(agents = t1,
+        #                var = "breed")=="I"]) 
+        #    t1 <- NLset(turtles = t1, agents = meet, var = "breed", val = "I") 
+        #    t1 <- NLset(turtles = t1, agents = meet, var = "color", val = "red")
+            
+            ## agents that enter a pub spend more time there
+            
+        #    pub <- turtlesOn(world = w1, turtles = t1, agents = patch(w1, x_pub, y_pub))
+        #    t1 <- NLset(turtles = t1, agents = turtle(t1, who = pub$who), 
+        #                var = "displacement", val = displacement_pub)      ## if enters the pub
+        #    t1 <- NLset(turtles = t1, agents = turtle(t1, who = t1[-(pub$who+1)]$who), 
+        #                var = "displacement", val = displacement_normal)   ## if exits the pub
+        #    Sys.sleep(0.1)
+            
+            ## store time-course data for plotting in the end
+            
+        #    contaminated_counter <- sum(str_count(t1$color, "red"))
+        #    tmp_data <- c(time,contaminated_counter)
+        #    plot_data_out <- rbind(plot_data_out, tmp_data)
+            
+        #}
+        
+        ### 3. PLOTTING AND FITTING SIMULATED DATA ###
+        
+        ## perform non-linear curve fitting of the data 
+       
+        #df <- as.data.frame(plot_data_out)
+        #names(df) <- c("time","contaminated_counter")
+        #x <- df$time
+        #y <- df$contaminated_counter
+        
+        ## give arbitrarily initial guesses to 3,4,600,1000 and fit with 4-parameters logistic equation 
+        
+        #model <- nlsLM(y ~ d + (a-d) / (1 + (x/c)^b), start = list(a = 3, b = 4, c = 600, d = 1000)) 
+        
+        ## make a line with the fitting model that goes through the data
+        
+        #fit_x <- data.frame(x = seq(min(x),max(x),len = simtime))
+        #fit_y <- predict(model, newdata = fit_x)
+        #fit_df <- as.data.frame(cbind(fit_x,fit_y))
+        #names(fit_df) <- c("x","y")
+        #fitted_function <- data.frame(x = seq(min(x),max(x),len = simtime))
+        #lines(fitted_function$x,predict(model,fitted_function = fitted_function))
+        
+        ## store summary statistics in a vector to be appended after each iteration to the output file
+        
+        #simulation_run_name <- paste0("sim_",number_agents,"_",number_pubs)
+        #varied_params <- c(number_agents,number_pubs)
+        #summary_stat <- c(simulation_run_name, varied_params, as.vector(model$m$getPars()) )
+        
+        ## save summary statistics of all the performed simulations in file with:
+        ## Simulation ID, parameters for simulation, outcome of the curve
+       
+        #write.table(as.data.frame(t(summary_stat)), "./summary_stat.csv", sep = ",", col.names = FALSE, 
+        #                            row.names=FALSE, append = TRUE) 
+    #}
+    
+#}
+```
+
+As a result, a corresponding dataset of 1,220 (20 x 61) simulations was built, and it was exported as *"summary_stat.csv"*. 
+
+## Approximate Bayesian Computation (ABC)
+
+### Downloading libraries and importing observed and simulation ABM data
+
+```{r loadlib, echo=T, message=FALSE, warning=FALSE, results='hide'}
+library(abc)
+
+obs_data <- c(3, 2, 1143, 1655)
+sim_param <- read.table(file="sim_param.dat",header=FALSE, sep = ",")
+sim_data <- read.table(file="sim_data.dat",header=FALSE, sep = ",")
+```
+
+### Running the ABC model
+
+To compare the simulated dataset with the “observed data” of *3, 2, 1143, 1655*, we used an ABC model with the "log" transformation applied to the parameter values and the "neuralnet" method.
+
+```{r, echo=T, message=FALSE, warning=FALSE, out.width = '90%'}
+result <- abc(target=obs_data,
+           param=sim_param,
+           sumstat=sim_data,
+           tol=0.005,
+           transf=c("log"),
+           method="neuralnet")
+```
+
+### Outcomes of the ABC model.
+
+The graphical report generated by the ABC model. The table with the values of the inferred posterior distribution. 
+
+```{r, echo=T, message=FALSE, warning=FALSE, out.width = '90%'}
+plot(result, param=sim_param)
+result$adj.values
+```
